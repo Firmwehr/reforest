@@ -4,8 +4,15 @@ import java.util.List;
 
 public record RandomSourceGeneratorSettings(
         double fieldToMethodRatio,
+        double arrayTypePercentage,
         int approximateNameLength,
         int maxTypeMembers,
-        List<String> identList
+        int maxTypes,
+        int maxParameters,
+        int maxStatementsPerBlock,
+        List<String> identList,
+        List<WeightedStatementType> statementWeights
 ) {
+
+    record WeightedStatementType(double weight, StatementType type) { }
 }
