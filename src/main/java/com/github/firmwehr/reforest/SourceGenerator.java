@@ -11,6 +11,7 @@ import spoon.reflect.declaration.CtClass;
 import spoon.reflect.declaration.CtField;
 import spoon.reflect.declaration.CtMethod;
 import spoon.reflect.declaration.CtParameter;
+import spoon.reflect.declaration.CtType;
 import spoon.reflect.declaration.CtTypeMember;
 import spoon.reflect.reference.CtTypeReference;
 
@@ -70,7 +71,7 @@ public interface SourceGenerator {
 
     <T> CtExpression<T> generatePostfixExpression(AccessContext context, CtTypeReference<?> type);
 
-    <T> CtExpression<T> generatePostfixOp(AccessContext context, CtTypeReference<?> type);
+    <T> CtExpression<T> generatePostfixOp(CtExpression<?> target, AccessContext context, CtTypeReference<?> type);
 
     <T> CtInvocation<T> generateMethodInvocation(AccessContext context, CtTypeReference<?> type);
 
@@ -89,7 +90,12 @@ public interface SourceGenerator {
     record AccessContext(
             List<CtLocalVariable<?>> localVariables,
             List<CtParameter<?>> parameters,
-            CtClass<?> enclosingClass
+            CtType<?> target,
+            CtClass<?> enclosingClass,
+            int complexity
     ) {
+        public AccessContext incrementComplexity() {
+            return new AccessContext(localVariables(), parameters(), target(), enclosingClass(), complexity() + 1);
+        }
     }
 }

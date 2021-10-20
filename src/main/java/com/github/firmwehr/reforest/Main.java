@@ -15,20 +15,21 @@ public class Main {
     public static void main(String[] args) throws IOException {
         List<String> list = Files.readAllLines(Path.of("src", "main", "resources", "words.txt"));
         var settings = new RandomSourceGeneratorSettings(
-                0.2,
+                0.3,
                 0.15,
-                25,
-                50,
                 20,
+                40,
+                40,
                 7,
-                15,
+                10,
                 list,
                 List.of(
                         new WeightedStatementType(0.05, StatementType.EMPTY),
-                        new WeightedStatementType(0.25, StatementType.LOCAL_VARIABLE_DECLARATION),
-                        new WeightedStatementType(0.4, StatementType.EXPRESSION),
-                        new WeightedStatementType(0.15, StatementType.IF),
-                        new WeightedStatementType(0.10, StatementType.WHILE)
+                        new WeightedStatementType(0.3, StatementType.LOCAL_VARIABLE_DECLARATION),
+                        new WeightedStatementType(0.3, StatementType.EXPRESSION),
+                        new WeightedStatementType(0.1, StatementType.IF),
+                        new WeightedStatementType(0.08, StatementType.WHILE),
+                        new WeightedStatementType(0.07, StatementType.BLOCK)
                 )
         );
         var random = RandomGeneratorFactory.getDefault().create(1337L << 42 | 98652677);
@@ -36,6 +37,6 @@ public class Main {
         List<String> classes = generator.generateProgram().stream().map(CtClass::toString)
                         .toList();
         classes.forEach(System.out::println);
-        Files.write(Path.of("src/main/resources/output.txt"), classes, StandardOpenOption.CREATE);
+        Files.write(Path.of("src/main/resources/output.txt"), classes);
     }
 }

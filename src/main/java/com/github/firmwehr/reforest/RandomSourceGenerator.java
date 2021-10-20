@@ -3,9 +3,11 @@ package com.github.firmwehr.reforest;
 import spoon.Launcher;
 import spoon.reflect.code.BinaryOperatorKind;
 import spoon.reflect.code.CtArrayAccess;
+import spoon.reflect.code.CtArrayRead;
 import spoon.reflect.code.CtBlock;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtFieldAccess;
+import spoon.reflect.code.CtFieldRead;
 import spoon.reflect.code.CtIf;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLocalVariable;
@@ -26,7 +28,9 @@ import spoon.reflect.declaration.ModifierKind;
 import spoon.reflect.factory.Factory;
 import spoon.reflect.reference.CtExecutableReference;
 import spoon.reflect.reference.CtTypeReference;
+import spoon.reflect.reference.CtVariableReference;
 
+import javax.lang.model.SourceVersion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
@@ -34,6 +38,9 @@ import java.util.TreeMap;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static java.util.Comparator.comparing;
+import static java.util.stream.Stream.concat;
 
 
 public class RandomSourceGenerator implements SourceGenerator {
@@ -88,9 +95,14 @@ public class RandomSourceGenerator implements SourceGenerator {
         this.validMethodReturnTypes.addAll(references);
         List<CtClass<?>> classes = names.stream().map(this::generateClass).collect(Collectors.toList());
         for (CtClass<?> aClass : classes) {
+            // lazy fields before methods sort
+            var members = aClass.getTypeMembers().stream()
+                    .sorted(comparing(CtTypeMember::getClass, comparing(Class::getName)))
+                    .toList();
+            aClass.setTypeMembers(members);
             for (CtMethod<?> method : aClass.getMethods()) {
                 method.setBody(generateBlock(
-                        new AccessContext(new ArrayList<>(), method.getParameters(), aClass),
+                        new AccessContext(new ArrayList<>(), method.getParameters(), aClass, aClass, 0),
                         method.getType(),
                         0
                 ));
@@ -181,7 +193,8 @@ public class RandomSourceGenerator implements SourceGenerator {
             case WHILE -> generateWhileStatement(context);
             case IF -> generateIfStatement(context);
             case EXPRESSION -> generateExpressionStatement(context);
-            case BLOCK -> generateBlockStatement(context);
+            // TODO pass return type and level?
+            case BLOCK -> generateBlock(context, null, 1);
         };
     }
 
@@ -190,14 +203,17 @@ public class RandomSourceGenerator implements SourceGenerator {
         AccessContext newContext = new AccessContext(
                 new ArrayList<>(context.localVariables()),
                 context.parameters(),
-                context.enclosingClass()
+                context.target(),
+                context.enclosingClass(),
+                context.complexity() + 1
         );
         CtBlock<T> ctBlock = this.factory.createBlock();
         int statementCount = this.random.nextInt(this.settings.maxStatementsPerBlock());
         for (int i = 0; i < statementCount; i++) {
-            ctBlock.addStatement(generateStatement(newContext));
+            // TODO pass whether custom returns are allowed (depending on level)
+            ctBlock.addStatement(generateBlockStatement(newContext));
         }
-        if (level == 0 && !returnType.equals(this.factory.Type().VOID_PRIMITIVE)) {
+        if (level == 0 && !this.factory.Type().VOID_PRIMITIVE.equals(returnType)) {
             ctBlock.addStatement(generateReturnStatement(newContext, returnType));
         }
         return ctBlock;
@@ -217,11 +233,11 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public CtStatement generateLocalVariableDeclarationStatement(AccessContext context) {
-        // TODO random initialisation
+        var type = generateType(false);
         CtLocalVariable<Object> localVariable = this.factory.Code().createLocalVariable(
-                generateType(false),
+                type,
                 randomLowerCamelCase(),
-                null
+                this.random.nextDouble() < 0.7 ? generateExpression(context, type) : null
         );
         context.localVariables().add(localVariable);
         return localVariable;
@@ -244,7 +260,11 @@ public class RandomSourceGenerator implements SourceGenerator {
     public CtStatement generateIfStatement(AccessContext context) {
         CtIf ctIf = this.factory.createIf();
         ctIf.setCondition(generateExpression(context, this.booleanType));
-        ctIf.setThenStatement(generateStatement(context));
+        CtStatement thenStatement = generateStatement(context);
+        if (thenStatement instanceof CtBlock<?> block && block.getStatements().isEmpty()) {
+            thenStatement = null; // spoon #4240 workaround
+        }
+        ctIf.setThenStatement(thenStatement);
         ctIf.setElseStatement(generateStatement(context));
         return ctIf;
     }
@@ -259,13 +279,7 @@ public class RandomSourceGenerator implements SourceGenerator {
     public CtStatement generateReturnStatement(AccessContext context, CtTypeReference<?> type) {
         CtReturn<Object> ctReturn = this.factory.Core().createReturn();
         // TODO more complex returns to make running code
-        if (type.equals(this.intType)) {
-            ctReturn.setReturnedExpression(this.factory.Code().createLiteral(0));
-        } else if (type.equals(this.booleanType)) {
-            ctReturn.setReturnedExpression(this.factory.Code().createLiteral(false));
-        } else {
-            ctReturn.setReturnedExpression(this.factory.Code().createLiteral(null));
-        }
+        ctReturn.setReturnedExpression(generateLogicalOrExpression(context, type));
         return ctReturn;
     }
 
@@ -276,43 +290,50 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public <T> CtExpression<T> generateAssignmentExpression(AccessContext context, CtTypeReference<?> type) {
+        // TODO
         return generateLogicalOrExpression(context, type);
     }
 
     @Override
     public <T> CtExpression<T> generateLogicalOrExpression(AccessContext context, CtTypeReference<?> type) {
-        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.1) {
+        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.15) {
             return generateLogicalAndExpression(context, type);
         }
         return this.factory.createBinaryOperator(
                 generateLogicalOrExpression(context, type),
                 generateLogicalAndExpression(context, type),
                 BinaryOperatorKind.OR
-        );
+        ).setType((CtTypeReference<Object>) this.booleanType);
     }
 
     @Override
     public <T> CtExpression<T> generateLogicalAndExpression(AccessContext context, CtTypeReference<?> type) {
-        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.1) {
+        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.09) {
             return generateEqualityExpression(context, type);
         }
         return this.factory.createBinaryOperator(
                 generateLogicalAndExpression(context, type),
                 generateEqualityExpression(context, type),
                 BinaryOperatorKind.AND
-        );
+        ).setType((CtTypeReference<Object>) this.booleanType);
     }
 
     @Override
     public <T> CtExpression<T> generateEqualityExpression(AccessContext context, CtTypeReference<?> type) {
-        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.1) {
+        if (!this.booleanType.equals(type) || this.random.nextDouble() > 0.08) {
             return generateRelationalExpression(context, type);
         }
+        // must be same on both sides to be valid java code
+        CtTypeReference<?> equalityType = randomFromList(this.validFieldTypes);
+        // we want some random array types in there
+        while (this.random.nextDouble() < 0.05) {
+            equalityType = toArrayTypeRef(equalityType);
+        }
         return this.factory.createBinaryOperator(
-                generateEqualityExpression(context, null),
-                generateRelationalExpression(context, null),
+                generateEqualityExpression(context, equalityType),
+                generateRelationalExpression(context, equalityType),
                 this.random.nextBoolean() ? BinaryOperatorKind.EQ : BinaryOperatorKind.NE
-        );
+        ).setType((CtTypeReference<Object>) equalityType);
     }
 
     @Override
@@ -330,7 +351,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateRelationalExpression(context, this.intType),
                 generateAdditiveExpression(context, this.intType),
                 relationalKinds[this.random.nextInt(relationalKinds.length)]
-        );
+        ).setType((CtTypeReference<Object>) this.intType);
     }
 
     @Override
@@ -342,137 +363,209 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateAdditiveExpression(context, this.intType),
                 generateMultiplicativeExpression(context, this.intType),
                 this.random.nextBoolean() ? BinaryOperatorKind.PLUS : BinaryOperatorKind.MINUS
-        );
+        ).setType((CtTypeReference<Object>) this.intType);
     }
 
     @Override
     public <T> CtExpression<T> generateMultiplicativeExpression(AccessContext context, CtTypeReference<?> type) {
-        if (!this.intType.equals(type) || this.random.nextDouble() > 0.2) {
+        if (!this.intType.equals(type) || this.random.nextDouble() > 0.1) {
             return generateUnaryExpression(context, type);
         }
+        var newContext = context.incrementComplexity();
         return this.factory.createBinaryOperator(
-                generateMultiplicativeExpression(context, this.intType),
-                generateUnaryExpression(context, this.intType),
+                generateMultiplicativeExpression(newContext, this.intType),
+                generateUnaryExpression(newContext, this.intType),
                 switch (this.random.nextInt(3)) {
                     case 0 -> BinaryOperatorKind.MUL;
                     case 1 -> BinaryOperatorKind.DIV;
                     case 2 -> BinaryOperatorKind.MOD;
                     default -> throw new IllegalArgumentException("???");
                 }
-        );
+        ).setType((CtTypeReference<Object>) this.intType);
     }
 
     @Override
     public <T> CtExpression<T> generateUnaryExpression(AccessContext context, CtTypeReference<?> type) {
-        if (!this.intType.equals(type) || !this.booleanType.equals(type) ||  this.random.nextDouble() > 0.2) {
+        if (!this.intType.equals(type) || !this.booleanType.equals(type) || this.random.nextDouble() > 0.2) {
             return generatePostfixExpression(context, type);
         }
         return this.factory.createUnaryOperator()
                 .<CtUnaryOperator<T>>setKind(type.equals(this.intType) ? UnaryOperatorKind.NEG : UnaryOperatorKind.NOT)
-                .<CtUnaryOperator<T>>setOperand(generateUnaryExpression(context, type));
+                .<CtUnaryOperator<T>>setOperand(generateUnaryExpression(context.incrementComplexity(), type));
     }
 
     @Override
     public <T> CtExpression<T> generatePostfixExpression(AccessContext context, CtTypeReference<?> type) {
-        // TODO ???
-        CtExpression<T> expression = generatePrimaryExpression(context, type);
-        while (expression == null) {
-            expression = generatePrimaryExpression(context, type); // TODO this should not be needed
+        CtExpression<T> expression;
+        if (context.complexity() > 10
+                || (expression = generatePrimaryExpression(context, type)) == null
+                || expression.getType().equals(this.factory.Type().VOID_PRIMITIVE)
+        ) {
+            return createLiteral(type, true);
         }
-        if (type != null && (type.equals(expression.getType()) || type.equals(this.factory.Type().NULL_TYPE))) {
-            // TODO wrap again? might be fun...
+        if (type.equals(expression.getType())
+                || expression.getType().equals(this.factory.Type().NULL_TYPE)
+                || expression.getType().equals(this.factory.Type().NULL_TYPE)
+                || expression.getType().equals(this.intType)
+                || expression.getType().equals(this.booleanType)
+        ) {
+            // TODO wrap again with probability? might be fun...
             return expression; // no PostfixOp on this needed
         }
-        if (this.intType.equals(type)) {
-            return this.factory.Code().createLiteral((T) (Object) this.random.nextInt());
-        } else if (this.booleanType.equals(type)) {
-            return this.factory.Code().createLiteral((T) (Object) this.random.nextBoolean());
-        } else {
-            return this.factory.Code().createLiteral(null);
-        }
+        return createLiteral(type, true);
+        // TODO MAKE THIS WORK!!!
+        // return generatePostfixOp(expression, context.incrementComplexity(), type);
     }
 
     @Override
-    public <T> CtExpression<T> generatePostfixOp(AccessContext context, CtTypeReference<?> type) {
-        return null;
+    public <T> CtExpression<T> generatePostfixOp(CtExpression<?> target, AccessContext context, CtTypeReference<?> type) {
+        CtExpression<?> current = target;
+        // TODO limit?
+        // loop is in here to have a proper context
+        while (!type.equals(current.getType())) {
+            if (target.getType().isArray()) {
+                current = generateArrayAccess(context.incrementComplexity(), type);
+                continue;
+            }
+            var newContext = new AccessContext(
+                    context.localVariables(),
+                    context.parameters(),
+                    target.getType().getDeclaration(),
+                    context.enclosingClass(),
+                    context.complexity() + 1
+            );
+            if (this.random.nextBoolean()) {
+                CtInvocation<T> invocation = generateMethodInvocation(newContext, type);
+                if (invocation == null) {
+                    return null; // :( TODO?
+                }
+                invocation.setTarget(target); // this is a hacky workaround for ugly design but who cares
+                current = invocation;
+            } else {
+                CtFieldAccess<T> fieldAccess = generateFieldAccess(newContext, type);
+                if (fieldAccess == null) {
+                    return null; // :( TODO?
+                }
+                fieldAccess.setTarget(target);
+                current = fieldAccess;
+            }
+        }
+        //noinspection unchecked
+        return (CtExpression<T>) current;
     }
 
     @Override
     public <T> CtInvocation<T> generateMethodInvocation(AccessContext context, CtTypeReference<?> type) {
-        List<CtMethod<?>> methods = filterByType(context.enclosingClass().getMethods().stream().toList(), type);
+        var methods = context.target().getMethods().stream().toList();
         if (methods.isEmpty()) {
-            return null;
+            return null; // can't do anything :(
+        }
+        var correctlyTypedMethods = filterByType(methods, type);
+        if (!correctlyTypedMethods.isEmpty()) {
+            // no method with this type found, we just return a different type then
+            methods = correctlyTypedMethods;
         }
         CtMethod<?> ctMethod = randomFromList(methods);
         CtInvocation<T> invocation = this.factory.createInvocation();
         invocation.setTarget(this.factory.createThisAccess(context.enclosingClass().getReference(), true));
+        //noinspection unchecked
         invocation.setExecutable((CtExecutableReference<T>) ctMethod.getReference());
         for (CtParameter<?> parameter : ctMethod.getParameters()) {
-            invocation.addArgument(generateArgument(context, parameter.getType()));
+            invocation.addArgument(generateArgument(context.incrementComplexity(), parameter.getType()));
         }
         return invocation;
     }
 
     @Override
     public <T> CtFieldAccess<T> generateFieldAccess(AccessContext context, CtTypeReference<?> type) {
-        return null;
+        var fields = context.target().getFields();
+        if (fields.isEmpty()) {
+            return null; // can't do anything :(
+        }
+        var correctlyTypedFields = filterByType(fields, type);
+        if (!correctlyTypedFields.isEmpty()) {
+            // no method with this type found, we just return a different type then
+            fields = correctlyTypedFields;
+        }
+        CtField<?> field = randomFromList(fields);
+        CtFieldRead<T> fieldRead = this.factory.createFieldRead();
+        //noinspection unchecked
+        fieldRead.setVariable((CtVariableReference<T>) field.getReference());
+        return fieldRead;
     }
 
     @Override
     public <T> CtArrayAccess<T, ?> generateArrayAccess(AccessContext context, CtTypeReference<?> type) {
-        return null;
+        CtArrayRead<T> arrayRead = this.factory.createArrayRead();
+        arrayRead.setIndexExpression(generateExpression(context, this.intType));
+        return arrayRead;
     }
 
     @Override
     public <T> CtExpression<T> generateArgument(AccessContext context, CtTypeReference<?> type) {
-        return generateExpression(context, type);
+        return generateExpression(context.incrementComplexity(), type);
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Override
     public <T> CtExpression<T> generatePrimaryExpression(AccessContext context, CtTypeReference<?> type) {
         double r = this.random.nextDouble();
-        if (r < 0.6) {
+        if (r < 0.3 || context.complexity() > 8) {
             // literal
-            if (this.intType.equals(type)) {
-                return this.factory.Code().createLiteral((T) (Object) this.random.nextInt());
-            } else if (this.booleanType.equals(type)) {
-                return this.factory.Code().createLiteral((T) (Object) this.random.nextBoolean());
-            } else if (r < 0.4) {
-                return this.factory.Code().createLiteral(null);
-            } else if (r < 0.5 && !(type != null && type.isArray())){ // TODO just to avoid running into the code below...
-                // merged with literal to avoid new int() and new boolean() situations
-                // new obj
-                return generateNewObjectExpression(type); // can be of different type?
-            } else {
-                // TODO I don't know what to do with that actually...
-                // merged with literal to avoid int i = new int[123] situations
-                // new array
-                return generateNewArrayExpression(context, type);
-            }
+            return createLiteral(type, true);
+        } else if (r < 0.4
+                && !this.intType.equals(type)
+                && !this.booleanType.equals(type)
+                && (type == null || !type.isArray())
+        ) {
+            // new obj
+            return generateNewObjectExpression(type); // can be of different type?
+        } else if (r < 0.5 && (type != null && type.isArray())) {
+            // new array
+            return generateNewArrayExpression(context, type);
         } else if (r < 0.7) {
             // IDENT
-            // TODO vars/params/fields...
-            return null;
+            // we differ from spec here, as spoon prints 'this.' for field accesses
+            // by default
+            // TODO?
+            List<CtLocalVariable<?>> localVariables = context.localVariables();
+            List<CtParameter<?>> parameters = context.parameters();
+            List<CtField<?>> fields = context.enclosingClass().getFields();
+            var variables = concat(
+                    concat(localVariables.stream(), parameters.stream()),
+                    fields.stream())
+                    .toList();
+            var correctlyTypedVariables = filterByType(variables, type);
+            CtVariable<?> variable;
+            if (!correctlyTypedVariables.isEmpty()) {
+                variable = randomFromList(correctlyTypedVariables);
+            } else {
+                // well, lets get a different type then
+                variable = randomFromList(variables);
+            }
+            return (CtExpression<T>) this.factory.createVariableRead(variable.getReference(), false)
+                    .setType((CtTypeReference) variable.getType());
         } else if (r < 0.8) {
             // IDENT (args)
             return generateMethodInvocation(context, type);
         } else if (r < 0.9) {
             // this
-            //noinspection unchecked
             return (CtExpression<T>) this.factory.createThisAccess(context.enclosingClass().getReference());
-        } else {
+        } else if (r >= 0.9) {
             // (expr)
             return generateExpression(context, type); // evil recursion?
+        } else {
+            return createLiteral(type, false); // fallback
         }
     }
 
     @Override
     public <T> CtExpression<T> generateNewObjectExpression(CtTypeReference<?> type) {
         CtTypeReference<?> newType = type != null ? type : randomFromList(this.validMethodReturnTypes);
+        // TODO avoid primitives here at all?
         while (newType.equals(this.intType) || newType.equals(this.booleanType)) {
             newType = randomFromList(this.validMethodReturnTypes);
         }
-        // TODO avoid primitives here
         //noinspection unchecked
         return (CtExpression<T>) this.factory.createConstructorCall(newType);
     }
@@ -481,7 +574,7 @@ public class RandomSourceGenerator implements SourceGenerator {
     public <T> CtExpression<T> generateNewArrayExpression(AccessContext context, CtTypeReference<?> type) {
         CtNewArray<T> newArray = this.factory.createNewArray();
         //noinspection unchecked
-        newArray.setType((CtTypeReference<T>)  this.factory.createArrayReference(type));
+        newArray.setType((CtTypeReference<T>) this.factory.createArrayReference(type));
         newArray.addDimensionExpression(generateExpression(context, this.intType));
         return newArray;
     }
@@ -493,7 +586,10 @@ public class RandomSourceGenerator implements SourceGenerator {
             //noinspection StringConcatenationInLoop
             result += uppercaseFirst(randomName());
         }
-        return result;
+        if (SourceVersion.isIdentifier(result)) {
+            return result;
+        }
+        return result + this.random.nextInt(0, 42);
     }
 
     private String randomLowerCamelCase() {
@@ -503,7 +599,10 @@ public class RandomSourceGenerator implements SourceGenerator {
             //noinspection StringConcatenationInLoop
             result += uppercaseFirst(randomName());
         }
-        return result;
+        if (SourceVersion.isName(result)) {
+            return result;
+        }
+        return result + this.random.nextInt(0, 42);
     }
 
     private String uppercaseFirst(String s) {
@@ -526,20 +625,6 @@ public class RandomSourceGenerator implements SourceGenerator {
         return this.statementTypes.floorEntry(this.random.nextDouble(this.statementBound)).getValue();
     }
 
-    private CtVariable<?> typedVariableFromContext(AccessContext context, CtTypeReference<?> type) {
-        List<? extends CtVariable<?>> list;
-        if (this.random.nextDouble() > 0.7 && !(list = filterByType(context.enclosingClass().getFields(), type)).isEmpty()) {
-            return randomFromList(list);
-        }
-        if (this.random.nextBoolean() && !(list = filterByType(context.localVariables(), type)).isEmpty()) {
-            return randomFromList(list);
-        }
-        if (!(list = filterByType(context.parameters(), type)).isEmpty()) {
-            return randomFromList(list);
-        }
-        return null;
-    }
-
     private <V extends CtTypedElement<?>> List<V> filterByType(List<V> list, CtTypeReference<?> type) {
         return list.stream().filter(v -> v.getType().equals(type)).toList();
     }
@@ -550,5 +635,16 @@ public class RandomSourceGenerator implements SourceGenerator {
                 // TODO settings
                 5 - (int) Math.sqrt(this.random.nextInt(1, 25))
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> CtExpression<T> createLiteral(CtTypeReference<?> type, boolean random) {
+        if (this.intType.equals(type)) {
+            return (CtExpression<T>) this.factory.Code().createLiteral(random ? this.random.nextInt() : 0);
+        } else if (this.booleanType.equals(type)) {
+            return (CtExpression<T>) this.factory.Code().createLiteral(random && this.random.nextBoolean());
+        } else {
+            return this.factory.Code().createLiteral(null);
+        }
     }
 }
