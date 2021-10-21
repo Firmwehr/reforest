@@ -548,9 +548,11 @@ public class RandomSourceGenerator implements SourceGenerator {
             CtVariable<?> variable;
             if (!correctlyTypedVariables.isEmpty()) {
                 variable = randomFromList(correctlyTypedVariables);
-            } else {
+            } else if (!variables.isEmpty()) {
                 // well, lets get a different type then
                 variable = randomFromList(variables);
+            } else {
+                return createLiteral(type, true); // fallback
             }
             return (CtExpression<T>) this.factory.createVariableRead(variable.getReference(), false)
                     .setType((CtTypeReference) variable.getType());
