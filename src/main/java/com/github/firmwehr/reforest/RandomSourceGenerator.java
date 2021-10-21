@@ -102,9 +102,15 @@ public class RandomSourceGenerator implements SourceGenerator {
             aClass.setTypeMembers(members);
             for (CtMethod<?> method : aClass.getMethods()) {
                 method.setBody(generateBlock(
-                        new AccessContext(new ArrayList<>(), method.getParameters(), aClass, aClass, 0),
-                        method.getType(),
-                        0
+                        new AccessContext(
+                                new ArrayList<>(),
+                                method.getParameters(),
+                                aClass,
+                                aClass,
+                                method.getType(),
+                                0
+                        ),
+                        method.getType()
                 ));
             }
         }
@@ -188,32 +194,31 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public CtStatement generateStatement(AccessContext context) {
         return switch (randomStatementType()) {
-            case LOCAL_VARIABLE_DECLARATION -> generateStatement(context); // not allowed here, try again
+            case LOCAL_VARIABLE_DECLARATION, RETURN -> generateStatement(context); // not allowed here, try again
             case EMPTY -> generateEmptyStatement(context);
             case WHILE -> generateWhileStatement(context);
             case IF -> generateIfStatement(context);
             case EXPRESSION -> generateExpressionStatement(context);
-            // TODO pass return type and level?
-            case BLOCK -> generateBlock(context, null, 1);
+            case BLOCK -> generateBlock(context.incrementComplexity(), context.returnType());
         };
     }
 
     @Override
-    public <T> CtBlock<T> generateBlock(AccessContext context, CtTypeReference<?> returnType, int level) {
+    public <T> CtBlock<T> generateBlock(AccessContext context, CtTypeReference<?> returnType) {
         AccessContext newContext = new AccessContext(
                 new ArrayList<>(context.localVariables()),
                 context.parameters(),
                 context.target(),
                 context.enclosingClass(),
+                context.returnType(),
                 context.complexity() + 1
         );
         CtBlock<T> ctBlock = this.factory.createBlock();
         int statementCount = this.random.nextInt(this.settings.maxStatementsPerBlock());
         for (int i = 0; i < statementCount; i++) {
-            // TODO pass whether custom returns are allowed (depending on level)
             ctBlock.addStatement(generateBlockStatement(newContext));
         }
-        if (level == 0 && !this.factory.Type().VOID_PRIMITIVE.equals(returnType)) {
+        if (context.complexity() == 0 && !this.factory.Type().VOID_PRIMITIVE.equals(returnType)) {
             ctBlock.addStatement(generateReturnStatement(newContext, returnType));
         }
         return ctBlock;
@@ -227,6 +232,9 @@ public class RandomSourceGenerator implements SourceGenerator {
             case WHILE -> generateWhileStatement(context);
             case IF -> generateIfStatement(context);
             case EXPRESSION -> generateExpressionStatement(context);
+            case RETURN -> context.complexity() > 1
+                    ? generateReturnStatement(context, context.returnType())
+                    : generateBlockStatement(context);
             case BLOCK -> generateBlockStatement(context);
         };
     }
@@ -432,6 +440,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                     context.parameters(),
                     target.getType().getDeclaration(),
                     context.enclosingClass(),
+                    context.returnType(),
                     context.complexity() + 1
             );
             if (this.random.nextBoolean()) {

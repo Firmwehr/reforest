@@ -29,6 +29,7 @@ public class Main {
                         new WeightedStatementType(0.3, StatementType.EXPRESSION),
                         new WeightedStatementType(0.1, StatementType.IF),
                         new WeightedStatementType(0.08, StatementType.WHILE),
+                        new WeightedStatementType(0.06, StatementType.RETURN),
                         new WeightedStatementType(0.07, StatementType.BLOCK)
                 )
         );

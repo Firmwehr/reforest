@@ -6,6 +6,6 @@ public enum StatementType {
     WHILE,
     IF,
     EXPRESSION,
-     // RETURN,
+    RETURN,
     BLOCK,
 }

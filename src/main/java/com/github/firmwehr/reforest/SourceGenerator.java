@@ -35,7 +35,7 @@ public interface SourceGenerator {
 
     CtStatement generateStatement(AccessContext context);
 
-    <T> CtBlock<T> generateBlock(AccessContext context, CtTypeReference<?> returnType, int level);
+    <T> CtBlock<T> generateBlock(AccessContext context, CtTypeReference<?> returnType);
 
     CtStatement generateBlockStatement(AccessContext context);
 
@@ -92,10 +92,18 @@ public interface SourceGenerator {
             List<CtParameter<?>> parameters,
             CtType<?> target,
             CtClass<?> enclosingClass,
+            CtTypeReference<?> returnType,
             int complexity
     ) {
         public AccessContext incrementComplexity() {
-            return new AccessContext(localVariables(), parameters(), target(), enclosingClass(), complexity() + 1);
+            return new AccessContext(
+                    localVariables(),
+                    parameters(),
+                    target(),
+                    enclosingClass(),
+                    returnType(),
+                    complexity() + 1
+            );
         }
     }
 }
