@@ -8,7 +8,6 @@ import spoon.reflect.code.CtBlock;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtFieldAccess;
 import spoon.reflect.code.CtFieldRead;
-import spoon.reflect.code.CtFieldWrite;
 import spoon.reflect.code.CtIf;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLocalVariable;
@@ -288,7 +287,9 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public CtStatement generateReturnStatement(AccessContext context, CtTypeReference<?> type) {
         CtReturn<Object> ctReturn = this.factory.Core().createReturn();
-        ctReturn.setReturnedExpression(generateLogicalOrExpression(context, type));
+        if (!type.equals(this.factory.Type().VOID_PRIMITIVE)) {
+            ctReturn.setReturnedExpression(generateLogicalOrExpression(context, type));
+        }
         return ctReturn;
     }
 
@@ -302,10 +303,13 @@ public class RandomSourceGenerator implements SourceGenerator {
         // TODO
         CtExpression<T> expression = generateLogicalOrExpression(context, type);
         if (expression instanceof CtVariableAccess access
-                && this.random.nextInt(context.complexity()) < 3) {
+                && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
             return (CtExpression<T>) this.factory.createVariableAssignment(access.getVariable(), false,
-                    generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
+                            generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
                     .setType(type);
+        } else if (expression instanceof CtArrayAccess access
+                && this.random.nextInt(context.complexity()) < 3) {
+
         }
         return expression;
     }
@@ -422,49 +426,46 @@ public class RandomSourceGenerator implements SourceGenerator {
         if (type.equals(expression.getType())
                 || expression.getType().equals(this.factory.Type().NULL_TYPE)
                 || expression.getType().equals(this.factory.Type().NULL_TYPE)
-                || expression.getType().equals(this.intType)
-                || expression.getType().equals(this.booleanType)
         ) {
             // TODO wrap again with probability? might be fun...
             return expression; // no PostfixOp on this needed
         }
-        return createLiteral(type, true);
+/*        if (expression.getType().isArray()) {
+            var arrayElementType = this.factory.Type()
+                    .get(expression.getType().getQualifiedName().replace("[]", ""));
+            if (arrayElementType != null) {
+                return expression;
+            }
+        }*/
+        // return createLiteral(type, true);
         // TODO MAKE THIS WORK!!!
-        // return generatePostfixOp(expression, context.incrementComplexity(), type);
+        if (expression.getType().equals(this.intType)
+                || expression.getType().equals(this.booleanType)) {
+            return createLiteral(type, true); // type is not correct and we can't fix it
+        }
+        expression = generatePostfixOp(expression, context.incrementComplexity(), type);
+        if (expression == null || !type.equals(expression.getType())) {
+            expression = createLiteral(type, true);
+        }
+        return expression;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <T> CtExpression<T> generatePostfixOp(CtExpression<?> target, AccessContext context, CtTypeReference<?> type) {
         CtExpression<?> current = target;
         // TODO limit?
         // loop is in here to have a proper context
-        while (!type.equals(current.getType())) {
-            if (target.getType().isArray()) {
-                current = generateArrayAccess(context.incrementComplexity(), type);
-                continue;
-            }
-            var newContext = new AccessContext(
-                    context.localVariables(),
-                    context.parameters(),
-                    target.getType().getDeclaration(),
-                    context.enclosingClass(),
-                    context.returnType(),
-                    context.complexity() + 1
-            );
-            if (this.random.nextBoolean()) {
-                CtInvocation<T> invocation = generateMethodInvocation(newContext, type);
-                if (invocation == null) {
-                    return null; // :( TODO?
-                }
-                invocation.setTarget(target); // this is a hacky workaround for ugly design but who cares
-                current = invocation;
+        while (target.getType().isArray() && !type.equals(current.getType())) {
+            var qualifiedName = current.getType().getQualifiedName();
+            if (current.getType().isArray() && qualifiedName.startsWith(type.getQualifiedName())) {
+                CtArrayAccess<Object, CtExpression<?>> arrayAccess =
+                        (CtArrayAccess<Object, CtExpression<?>>) generateArrayAccess(context.incrementComplexity(), type);
+                arrayAccess.setTarget(current);
+                current = arrayAccess;
+                current.setType(this.factory.Type().createReference(qualifiedName.substring(0, qualifiedName.lastIndexOf('['))));
             } else {
-                CtFieldAccess<T> fieldAccess = generateFieldAccess(newContext, type);
-                if (fieldAccess == null) {
-                    return null; // :( TODO?
-                }
-                fieldAccess.setTarget(target);
-                current = fieldAccess;
+                return null;
             }
         }
         //noinspection unchecked
@@ -477,7 +478,7 @@ public class RandomSourceGenerator implements SourceGenerator {
         if (methods.isEmpty()) {
             return null; // can't do anything :(
         }
-        var correctlyTypedMethods = filterByType(methods, type);
+        var correctlyTypedMethods = filterByType(methods, type, true);
         if (!correctlyTypedMethods.isEmpty()) {
             // no method with this type found, we just return a different type then
             methods = correctlyTypedMethods;
@@ -493,20 +494,20 @@ public class RandomSourceGenerator implements SourceGenerator {
         return invocation;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <T> CtFieldAccess<T> generateFieldAccess(AccessContext context, CtTypeReference<?> type) {
         var fields = context.target().getFields();
         if (fields.isEmpty()) {
             return null; // can't do anything :(
         }
-        var correctlyTypedFields = filterByType(fields, type);
+        var correctlyTypedFields = filterByType(fields, type, true);
         if (!correctlyTypedFields.isEmpty()) {
             // no method with this type found, we just return a different type then
             fields = correctlyTypedFields;
         }
         CtField<?> field = randomFromList(fields);
         CtFieldRead<T> fieldRead = this.factory.createFieldRead();
-        //noinspection unchecked
         fieldRead.setVariable((CtVariableReference<T>) field.getReference());
         return fieldRead;
     }
@@ -552,7 +553,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                     concat(localVariables.stream(), parameters.stream()),
                     fields.stream())
                     .toList();
-            var correctlyTypedVariables = filterByType(variables, type);
+            var correctlyTypedVariables = filterByType(variables, type, true);
             CtVariable<?> variable;
             if (!correctlyTypedVariables.isEmpty()) {
                 variable = randomFromList(correctlyTypedVariables);
@@ -593,7 +594,7 @@ public class RandomSourceGenerator implements SourceGenerator {
     public <T> CtExpression<T> generateNewArrayExpression(AccessContext context, CtTypeReference<?> type) {
         CtNewArray<T> newArray = this.factory.createNewArray();
         //noinspection unchecked
-        newArray.setType((CtTypeReference<T>) this.factory.createArrayReference(type));
+        newArray.setType((CtTypeReference<T>) type);
         newArray.addDimensionExpression(generateExpression(context, this.intType));
         return newArray;
     }
@@ -644,8 +645,10 @@ public class RandomSourceGenerator implements SourceGenerator {
         return this.statementTypes.floorEntry(this.random.nextDouble(this.statementBound)).getValue();
     }
 
-    private <V extends CtTypedElement<?>> List<V> filterByType(List<V> list, CtTypeReference<?> type) {
-        return list.stream().filter(v -> v.getType().equals(type)).toList();
+    private <V extends CtTypedElement<?>> List<V> filterByType(List<V> list, CtTypeReference<?> type, boolean allowArrays) {
+        return list.stream().filter(v -> v.getType().equals(type)
+                        || (allowArrays && v.getType().isArray() && v.getType().getQualifiedName().startsWith(type.getQualifiedName())))
+                .toList();
     }
 
     @SuppressWarnings("unchecked")
