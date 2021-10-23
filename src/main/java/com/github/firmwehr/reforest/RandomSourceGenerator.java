@@ -8,6 +8,7 @@ import spoon.reflect.code.CtBlock;
 import spoon.reflect.code.CtExpression;
 import spoon.reflect.code.CtFieldAccess;
 import spoon.reflect.code.CtFieldRead;
+import spoon.reflect.code.CtFieldWrite;
 import spoon.reflect.code.CtIf;
 import spoon.reflect.code.CtInvocation;
 import spoon.reflect.code.CtLocalVariable;
@@ -15,6 +16,7 @@ import spoon.reflect.code.CtNewArray;
 import spoon.reflect.code.CtReturn;
 import spoon.reflect.code.CtStatement;
 import spoon.reflect.code.CtUnaryOperator;
+import spoon.reflect.code.CtVariableAccess;
 import spoon.reflect.code.CtWhile;
 import spoon.reflect.code.UnaryOperatorKind;
 import spoon.reflect.declaration.CtClass;
@@ -286,7 +288,6 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public CtStatement generateReturnStatement(AccessContext context, CtTypeReference<?> type) {
         CtReturn<Object> ctReturn = this.factory.Core().createReturn();
-        // TODO more complex returns to make running code
         ctReturn.setReturnedExpression(generateLogicalOrExpression(context, type));
         return ctReturn;
     }
@@ -299,7 +300,14 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public <T> CtExpression<T> generateAssignmentExpression(AccessContext context, CtTypeReference<?> type) {
         // TODO
-        return generateLogicalOrExpression(context, type);
+        CtExpression<T> expression = generateLogicalOrExpression(context, type);
+        if (expression instanceof CtVariableAccess access
+                && this.random.nextInt(context.complexity()) < 3) {
+            return (CtExpression<T>) this.factory.createVariableAssignment(access.getVariable(), false,
+                    generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
+                    .setType(type);
+        }
+        return expression;
     }
 
     @Override
