@@ -308,8 +308,12 @@ public class RandomSourceGenerator implements SourceGenerator {
                             generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
                     .setType(type);
         } else if (expression instanceof CtArrayAccess access
-                && this.random.nextInt(context.complexity()) < 3) {
-
+                && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
+            var assignment = (CtExpression<T>) this.factory.createAssignment()
+                    .setAssigned(access)
+                    .setAssignment(generateExpression(context.incrementComplexity(), access.getType()));
+            assignment.setType(access.getType());
+            return assignment;
         }
         return expression;
     }
