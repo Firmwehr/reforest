@@ -35,6 +35,7 @@ import javax.lang.model.SourceVersion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
@@ -157,11 +158,13 @@ public class RandomSourceGenerator implements SourceGenerator {
         CtMethod<T> ctMethod = this.factory.Core().createMethod();
         ctMethod.setSimpleName(randomLowerCamelCase());
         ctMethod.setType(generateType(true));
-        // TODO throws
         List<CtParameter<?>> parameters = new ArrayList<>();
         int parameterCount = this.random.nextInt(this.settings.maxParameters());
         for (int i = 0; i < parameterCount; i++) {
             parameters.add(generateParameter());
+        }
+        if (this.random.nextDouble() < 0.1) {
+            ctMethod.setThrownTypes(Set.of(this.factory.Type().createReference(randomUpperCamelCase())));
         }
         ctMethod.setParameters(parameters);
         ctMethod.addModifier(ModifierKind.PUBLIC);
