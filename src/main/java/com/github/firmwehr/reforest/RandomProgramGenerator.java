@@ -10,7 +10,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.random.RandomGeneratorFactory;
 
-public class Main {
+public class RandomProgramGenerator {
 
     public static void main(String[] args) throws IOException {
         List<String> list = Files.readAllLines(Path.of("src", "main", "resources", "words.txt"));

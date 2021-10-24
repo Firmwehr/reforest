@@ -179,12 +179,11 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public <T> CtTypeReference<T> generateType(boolean voidAllowed) {
-        @SuppressWarnings("unchecked")
-        CtTypeReference<T> typeReference = (CtTypeReference<T>) randomFromList(
+        CtTypeReference<T> typeReference = fixGenerics(randomFromList(
                 voidAllowed
                         ? this.validMethodReturnTypes
                         : this.validFieldTypes
-        );
+        ));
         if (!typeReference.equals(this.factory.Type().VOID_PRIMITIVE)
                 && this.random.nextDouble() < this.settings.arrayTypePercentage()) {
             typeReference = toArrayTypeRef(typeReference);
@@ -280,8 +279,23 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public CtStatement generateExpressionStatement(AccessContext context) {
-        // TODO generate method calls and assignment expressions
-        return null;
+        if (this.random.nextDouble() < 0.6) {
+            return generateMethodInvocation(context.incrementComplexity(), randomFromList(this.validMethodReturnTypes));
+        } else {
+            List<CtLocalVariable<?>> localVariables = context.localVariables();
+            List<CtParameter<?>> parameters = context.parameters();
+            List<CtField<?>> fields = context.enclosingClass().getFields();
+            var variables = concat(
+                    concat(localVariables.stream(), parameters.stream()),
+                    fields.stream())
+                    .toList();
+            if (variables.isEmpty()) {
+                return null; // can't do an assignment
+            }
+            CtVariable<?> variable = randomFromList(variables);
+            return this.factory.createVariableAssignment(variable.getReference(), false,
+                    generateExpression(context.incrementComplexity(), variable.getType()));
+        }
     }
 
     @Override
@@ -304,16 +318,19 @@ public class RandomSourceGenerator implements SourceGenerator {
         CtExpression<T> expression = generateLogicalOrExpression(context, type);
         if (expression instanceof CtVariableAccess access
                 && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
+            //noinspection unchecked
             return (CtExpression<T>) this.factory.createVariableAssignment(access.getVariable(), false,
                             generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
                     .setType(type);
         } else if (expression instanceof CtArrayAccess access
                 && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
-            var assignment = (CtExpression<T>) this.factory.createAssignment()
-                    .setAssigned(access)
-                    .setAssignment(generateExpression(context.incrementComplexity(), access.getType()));
-            assignment.setType(access.getType());
-            return assignment;
+            var assignment = this.factory.createAssignment();
+            //noinspection unchecked
+            assignment.setAssigned(access);
+            assignment.setAssignment(generateExpression(context.incrementComplexity(), access.getType()));
+            assignment.setType(fixGenerics(access.getType()));
+            //noinspection unchecked
+            return (CtExpression<T>) assignment;
         }
         return expression;
     }
@@ -327,7 +344,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateLogicalOrExpression(context, type),
                 generateLogicalAndExpression(context, type),
                 BinaryOperatorKind.OR
-        ).setType((CtTypeReference<Object>) this.booleanType);
+        ).setType(fixGenerics(this.booleanType));
     }
 
     @Override
@@ -339,7 +356,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateLogicalAndExpression(context, type),
                 generateEqualityExpression(context, type),
                 BinaryOperatorKind.AND
-        ).setType((CtTypeReference<Object>) this.booleanType);
+        ).setType(fixGenerics(this.booleanType));
     }
 
     @Override
@@ -357,7 +374,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateEqualityExpression(context, equalityType),
                 generateRelationalExpression(context, equalityType),
                 this.random.nextBoolean() ? BinaryOperatorKind.EQ : BinaryOperatorKind.NE
-        ).setType((CtTypeReference<Object>) equalityType);
+        ).setType(fixGenerics(equalityType));
     }
 
     @Override
@@ -375,7 +392,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateRelationalExpression(context, this.intType),
                 generateAdditiveExpression(context, this.intType),
                 relationalKinds[this.random.nextInt(relationalKinds.length)]
-        ).setType((CtTypeReference<Object>) this.intType);
+        ).setType(fixGenerics(this.intType));
     }
 
     @Override
@@ -387,7 +404,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                 generateAdditiveExpression(context, this.intType),
                 generateMultiplicativeExpression(context, this.intType),
                 this.random.nextBoolean() ? BinaryOperatorKind.PLUS : BinaryOperatorKind.MINUS
-        ).setType((CtTypeReference<Object>) this.intType);
+        ).setType(fixGenerics(this.intType));
     }
 
     @Override
@@ -405,7 +422,7 @@ public class RandomSourceGenerator implements SourceGenerator {
                     case 2 -> BinaryOperatorKind.MOD;
                     default -> throw new IllegalArgumentException("???");
                 }
-        ).setType((CtTypeReference<Object>) this.intType);
+        ).setType(fixGenerics(this.intType));
     }
 
     @Override
@@ -672,5 +689,10 @@ public class RandomSourceGenerator implements SourceGenerator {
         } else {
             return this.factory.Code().createLiteral(null);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> CtTypeReference<T> fixGenerics(CtTypeReference<?> type) {
+        return (CtTypeReference<T>) type;
     }
 }
