@@ -29,7 +29,7 @@ public interface SourceGenerator {
 
     <T> CtMethod<T> generateMethod();
 
-    <T> CtParameter<T> generateParameter();
+    <T> CtParameter<T> generateParameter(String name);
 
     <T> CtTypeReference<T> generateType(boolean voidAllowed);
 

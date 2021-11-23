@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Supplier;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -87,15 +88,13 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public List<CtClass<?>> generateProgram() {
-        List<String> names = IntStream.range(0, this.random.nextInt(this.settings.maxTypes()))
-                .mapToObj(i -> randomUpperCamelCase())
-                .toList();
+        List<String> names = randomNames(0, this.random.nextInt(this.settings.maxTypes()), this::randomUpperCamelCase);
         List<CtTypeReference<Object>> references = names.stream()
                 .map(n -> this.factory.Type().createReference(n))
                 .toList();
         this.validFieldTypes.addAll(references);
         this.validMethodReturnTypes.addAll(references);
-        List<CtClass<?>> classes = names.stream().map(this::generateClass).collect(Collectors.toList());
+        List<CtClass<?>> classes = names.stream().distinct().map(this::generateClass).collect(Collectors.toList());
         for (CtClass<?> aClass : classes) {
             // lazy fields before methods sort
             var members = aClass.getTypeMembers().stream()
@@ -160,8 +159,9 @@ public class RandomSourceGenerator implements SourceGenerator {
         ctMethod.setType(generateType(true));
         List<CtParameter<?>> parameters = new ArrayList<>();
         int parameterCount = this.random.nextInt(this.settings.maxParameters());
+        List<String> parameterNames = randomNames(0, parameterCount, this::randomLowerCamelCase);
         for (int i = 0; i < parameterCount; i++) {
-            parameters.add(generateParameter());
+            parameters.add(generateParameter(parameterNames.get(i)));
         }
         if (this.random.nextDouble() < 0.1) {
             ctMethod.setThrownTypes(Set.of(this.factory.Type().createReference(randomUpperCamelCase())));
@@ -173,10 +173,10 @@ public class RandomSourceGenerator implements SourceGenerator {
     }
 
     @Override
-    public <T> CtParameter<T> generateParameter() {
+    public <T> CtParameter<T> generateParameter(String name) {
         CtParameter<T> ctParameter = this.factory.Core().createParameter();
         ctParameter.setType(generateType(false));
-        ctParameter.setSimpleName(randomLowerCamelCase());
+        ctParameter.setSimpleName(name);
         return ctParameter;
     }
 
@@ -654,6 +654,13 @@ public class RandomSourceGenerator implements SourceGenerator {
             return s;
         }
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    private List<String> randomNames(int min, int max, Supplier<String> nameFactory) {
+        return IntStream.range(min, max)
+                .mapToObj(i -> nameFactory.get())
+                .distinct()
+                .toList();
     }
 
     private String randomName() {

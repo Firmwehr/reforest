@@ -1,4 +1,4 @@
-package com.github.firmwehr.reforest;
+package com.github.firmwehr.reforest.util;
 
 import java.io.IOException;
 import java.net.URI;
