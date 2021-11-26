@@ -95,6 +95,7 @@ public class RandomSourceGenerator implements SourceGenerator {
         this.validFieldTypes.addAll(references);
         this.validMethodReturnTypes.addAll(references);
         List<CtClass<?>> classes = names.stream().distinct().map(this::generateClass).collect(Collectors.toList());
+        int w = classes.size();
         for (CtClass<?> aClass : classes) {
             // lazy fields before methods sort
             var members = aClass.getTypeMembers().stream()
@@ -113,6 +114,35 @@ public class RandomSourceGenerator implements SourceGenerator {
                         ),
                         method.getType()
                 ));
+            }
+            if (w > 0 && random.nextInt(w--) == 0) {
+                w = 0; // found
+                // used to prevent direct method/field accesses in static context - yes we're super lazy
+                CtClass<?> fakeTarget = factory.createClass();
+                CtMethod<?> mainMethod = factory.createMethod(
+                        aClass,
+                        Set.of(ModifierKind.PUBLIC, ModifierKind.STATIC),
+                        factory.Type().voidPrimitiveType(),
+                        "main",
+                        List.of(factory.createParameter(
+                                null,
+                                factory.Type().createArrayReference("String"),
+                                "args")
+                        ),
+                        Set.of());
+                addThrownTypes(mainMethod);
+                mainMethod.setBody(generateBlock(
+                        new AccessContext(
+                                new ArrayList<>(),
+                                new ArrayList<>(),
+                                fakeTarget,
+                                fakeTarget,
+                                factory.Type().voidPrimitiveType(),
+                                2
+                                ),
+                        factory.Type().voidPrimitiveType()
+                ));
+                aClass.addTypeMember(mainMethod);
             }
         }
         return classes;
@@ -163,13 +193,17 @@ public class RandomSourceGenerator implements SourceGenerator {
         for (int i = 0; i < parameterCount; i++) {
             parameters.add(generateParameter(parameterNames.get(i)));
         }
-        if (this.random.nextDouble() < 0.1) {
-            ctMethod.setThrownTypes(Set.of(this.factory.Type().createReference(randomUpperCamelCase())));
-        }
+        addThrownTypes(ctMethod);
         ctMethod.setParameters(parameters);
         ctMethod.addModifier(ModifierKind.PUBLIC);
         // body is added later, when method/field references of other classes are available
         return ctMethod;
+    }
+
+    private void addThrownTypes(CtMethod<?> method) {
+        while (this.random.nextDouble() < 0.1) {
+            method.addThrownType(this.factory.Type().createReference(randomUpperCamelCase()));
+        }
     }
 
     @Override
