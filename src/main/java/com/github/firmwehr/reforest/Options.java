@@ -58,6 +58,27 @@ public interface Options {
     )
     OptionalInt approximateNameLength();
 
+    @Option(
+            names = "--type-limit",
+            paramLabel = "INTEGER",
+            description = "The maximum amount of types to create"
+    )
+    OptionalInt typeLimit();
+
+    @Option(
+            names = "--type-member-limit",
+            paramLabel = "INTEGER",
+            description = "The maximum amount of type members per type"
+    )
+    OptionalInt typeMemberLimit();
+
+    @Option(
+            names = "--max-statements-per-block",
+            paramLabel = "INTEGER",
+            description = "The amount of statements created in a block"
+    )
+    OptionalInt statementsPerBlock();
+
     class ExistingFileConverter extends StringConverter<Path> {
 
         @Override

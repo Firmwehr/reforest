@@ -26,10 +26,10 @@ public class RandomProgramGenerator {
                 options.fieldToMethodRatio().orElse(0.3),
                 options.arrayTypePercentage().orElse(0.15),
                 options.approximateNameLength().orElse(24),
+                options.typeMemberLimit().orElse(10),
+                options.typeLimit().orElse(5),
                 10,
-                5,
-                10,
-                15,
+                options.statementsPerBlock().orElse(15),
                 list,
                 List.of(
                         new WeightedStatementType(0.05, StatementType.EMPTY),
