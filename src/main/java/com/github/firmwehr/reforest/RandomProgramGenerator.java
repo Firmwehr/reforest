@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
 
@@ -42,9 +43,9 @@ public class RandomProgramGenerator {
                 )
         );
         RandomGeneratorFactory<RandomGenerator> generatorFactory = RandomGeneratorFactory.getDefault();
-        var random = options.seed().isPresent()
-                ? generatorFactory.create(options.seed().getAsLong())
-                : generatorFactory.create();
+        var seed = options.seed().orElse(ThreadLocalRandom.current().nextInt());
+        System.out.println("Using seed: " + seed);
+        var random = generatorFactory.create(seed);
         var generator = new RandomSourceGenerator(random, settings);
         List<String> classes = generator.generateProgram().stream()
                 .map(CtClass::toString)
