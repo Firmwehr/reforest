@@ -1,6 +1,8 @@
 plugins {
     java
+    application
     id("org.graalvm.buildtools.native") version "0.9.9"
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 group = "com.github.firmwehr"
@@ -25,6 +27,11 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17))
     }
+}
+
+
+application {
+    mainClass.set("com.github.firmwehr.reforest.RandomProgramGenerator")
 }
 
 graalvmNative {
