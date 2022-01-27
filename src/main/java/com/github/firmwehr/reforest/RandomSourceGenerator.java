@@ -40,7 +40,6 @@ import java.util.TreeMap;
 import java.util.function.Supplier;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static java.util.Comparator.comparing;
@@ -355,13 +354,13 @@ public class RandomSourceGenerator implements SourceGenerator {
         // TODO
         CtExpression<T> expression = generateLogicalOrExpression(context, type);
         if (expression instanceof CtVariableAccess access
-                && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
+                && this.random.nextInt(context.complexity()) < context.complexity() / 2 + 1) {
             //noinspection unchecked
             return (CtExpression<T>) this.factory.createVariableAssignment(access.getVariable(), false,
                             generateAssignmentExpression(context.incrementComplexity(), expression.getType()))
                     .setType(type);
         } else if (expression instanceof CtArrayAccess access
-                && this.random.nextInt(context.complexity()) < context.complexity() / 3 + 1) {
+                && this.random.nextInt(context.complexity()) < context.complexity() / 2 + 1) {
             var assignment = this.factory.createAssignment();
             //noinspection unchecked
             assignment.setAssigned(access);
@@ -587,7 +586,7 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public <T> CtExpression<T> generatePrimaryExpression(AccessContext context, CtTypeReference<?> type) {
         double r = this.random.nextDouble();
-        if (r < 0.3 || context.complexity() > 8) {
+        if (r < 0.3 || context.complexity() > 12) {
             // literal
             return createLiteral(type, true);
         } else if (r < 0.4
