@@ -41,6 +41,7 @@ import java.util.function.Supplier;
 import java.util.random.RandomGenerator;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static java.util.Comparator.comparing;
 import static java.util.stream.Stream.concat;
@@ -88,7 +89,7 @@ public class RandomSourceGenerator implements SourceGenerator {
 
     @Override
     public List<CtClass<?>> generateProgram() {
-        List<String> names = randomNames(0, this.random.nextInt(this.settings.maxTypes()), this::randomUpperCamelCase);
+        List<String> names = randomNames(this.random.nextInt(this.settings.maxTypes()), this::randomUpperCamelCase);
         List<CtTypeReference<Object>> references = names.stream()
                 .map(n -> this.factory.Type().createReference(n))
                 .toList();
@@ -189,7 +190,7 @@ public class RandomSourceGenerator implements SourceGenerator {
         ctMethod.setType(generateType(true));
         List<CtParameter<?>> parameters = new ArrayList<>();
         int parameterCount = this.random.nextInt(this.settings.maxParameters());
-        List<String> parameterNames = randomNames(0, parameterCount, this::randomLowerCamelCase);
+        List<String> parameterNames = randomNames(parameterCount, this::randomLowerCamelCase);
         for (int i = 0; i < parameterCount; i++) {
             parameters.add(generateParameter(parameterNames.get(i)));
         }
@@ -690,10 +691,10 @@ public class RandomSourceGenerator implements SourceGenerator {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    private List<String> randomNames(int min, int max, Supplier<String> nameFactory) {
-        return IntStream.range(min, max)
-                .mapToObj(i -> nameFactory.get())
+    private List<String> randomNames(int count, Supplier<String> nameFactory) {
+        return Stream.generate(nameFactory)
                 .distinct()
+                .limit(count)
                 .toList();
     }
 
