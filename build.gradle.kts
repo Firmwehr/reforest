@@ -3,6 +3,7 @@ plugins {
     application
     id("org.graalvm.buildtools.native") version "0.9.9"
     id("com.github.johnrengelman.shadow") version "7.1.2"
+    `maven-publish`
 }
 
 group = "com.github.firmwehr"
@@ -50,4 +51,16 @@ graalvmNative {
 
 tasks.getByName<Test>("test") {
     useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = groupId
+            artifactId = artifactId
+            version = "1.0"
+
+            from(components["java"])
+        }
+    }
 }
