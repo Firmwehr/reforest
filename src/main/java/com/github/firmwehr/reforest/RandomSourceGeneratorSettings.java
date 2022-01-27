@@ -14,5 +14,5 @@ public record RandomSourceGeneratorSettings(
         List<WeightedStatementType> statementWeights
 ) {
 
-    record WeightedStatementType(double weight, StatementType type) { }
+    public record WeightedStatementType(double weight, StatementType type) { }
 }
