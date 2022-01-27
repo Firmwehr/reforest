@@ -233,8 +233,8 @@ public class RandomSourceGenerator implements SourceGenerator {
         return switch (randomStatementType()) {
             case LOCAL_VARIABLE_DECLARATION, RETURN -> generateStatement(context); // not allowed here, try again
             case EMPTY -> generateEmptyStatement(context);
-            case WHILE -> generateWhileStatement(context);
-            case IF -> generateIfStatement(context);
+            case WHILE -> generateWhileStatement(context.incrementComplexity());
+            case IF -> generateIfStatement(context.incrementComplexity());
             case EXPRESSION -> generateExpressionStatement(context);
             case BLOCK -> generateBlock(context.incrementComplexity(), context.returnType());
         };
