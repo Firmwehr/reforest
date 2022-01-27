@@ -573,7 +573,7 @@ public class RandomSourceGenerator implements SourceGenerator {
     @Override
     public <T> CtArrayAccess<T, ?> generateArrayAccess(AccessContext context, CtTypeReference<?> type) {
         CtArrayRead<T> arrayRead = this.factory.createArrayRead();
-        arrayRead.setIndexExpression(generateExpression(context, this.intType));
+        arrayRead.setIndexExpression(generateExpression(context.incrementComplexity(), this.intType));
         return arrayRead;
     }
 
